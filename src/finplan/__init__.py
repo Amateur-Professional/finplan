@@ -1,2 +1,2 @@
-def hello() -> str:
-    return "Hello from finplan!"
+def smoke_test() -> str:
+    return "FinPlan is working!"
