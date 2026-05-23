@@ -1,0 +1,44 @@
+[project]
+name = "finplan"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Michael Mangano", email = "mangano.mj@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "pydantic>=2.13.4",
+    "scipy>=1.17.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "pyright>=1.1.409",
+    "pytest>=9.0.3",
+    "ruff>=0.15.14",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+# E/F: pyflakes+pycodestyle, I: isort, N: naming,
+# UP: pyupgrade, B: bugbear, SIM: simplify, RUF: ruff-specific
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "strict"

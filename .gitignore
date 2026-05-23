@@ -1,0 +1,35 @@
+# Virtual environment (recreated from uv.lock via `uv sync`)
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment variables / secrets
+.env
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# IDE — keep shared settings, ignore the rest
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
