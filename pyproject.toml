@@ -36,10 +36,6 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 # E/F: pyflakes+pycodestyle, I: isort, N: naming,
 # UP: pyupgrade, B: bugbear, SIM: simplify, RUF: ruff-specific
 
-[tool.ruff.lint.per-file-ignores]
-# Embedded tax data tables — long bracket lists are intentional, not fixable.
-"src/finplan/_tax_tables.py" = ["E501"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
