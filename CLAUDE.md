@@ -14,8 +14,17 @@ Monte Carlo simulation. Core differentiators: correctness, transparency
 - Federal tax modeling: ordinary income brackets, long-term capital gains,
   standard deduction, simplified Social Security taxation, RMDs from
   tax-deferred accounts
-- Withdrawal strategies: (1) fixed real spending, (2) tax-efficient
-  account-ordering
+Spending policy (how much per year):
+- v0: Fixed real spending — constant inflation-adjusted annual spending,
+  independent of portfolio performance. (Variable/guardrail policies: roadmap.)
+
+Sourcing policy (which accounts fund the spending):
+- v0: Conventional ordering (taxable → tax-deferred → Roth) and/or
+  tax-efficient ordering (sequence withdrawals to minimize lifetime tax).
+
+Note: spending is an after-tax target; the sourcing policy determines taxes,
+which determine the gross withdrawal required to net the target.
+
 - Outputs: probability of success, percentile wealth paths, and FULL
   year-by-year detail that is inspectable
 

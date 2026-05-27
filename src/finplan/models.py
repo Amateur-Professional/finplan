@@ -25,9 +25,17 @@ class FilingStatus(StrEnum):
     MARRIED_FILING_JOINTLY = "married_filing_jointly"
 
 
-class WithdrawalStrategy(StrEnum):
-    FIXED_REAL = "fixed_real"  # Constant real spending each year
-    TAX_EFFICIENT = "tax_efficient"  # Tax-efficient account ordering
+class SpendingPolicy(StrEnum):
+    """How much to spend each year (the after-tax target)."""
+
+    FIXED_REAL = "fixed_real"  # Constant inflation-adjusted spending
+
+
+class SourcingPolicy(StrEnum):
+    """Which accounts fund the spending, in what order."""
+
+    CONVENTIONAL = "conventional"  # taxable -> tax-deferred -> Roth
+    TAX_EFFICIENT = "tax_efficient"  # bracket-aware sequencing to lower lifetime tax
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +148,10 @@ class PlanInput(BaseModel):
     # --- Spending ---
     annual_spending_real: float = Field(
         gt=0.0,
-        description="Desired annual spending in today's real dollars",
+        description="Desired after-tax annual spending in today's real dollars",
     )
-    withdrawal_strategy: WithdrawalStrategy = WithdrawalStrategy.TAX_EFFICIENT
+    spending_policy: SpendingPolicy = SpendingPolicy.FIXED_REAL
+    sourcing_policy: SourcingPolicy = SourcingPolicy.CONVENTIONAL
 
     # --- Capital-market assumptions ---
     returns: ReturnAssumptions

@@ -1,7 +1,7 @@
 [project]
 name = "finplan"
 version = "0.1.0"
-description = "Add your description here"
+description = "A tax-aware US retirement planning engine with transparent, year-by-year Monte Carlo projections."
 readme = "README.md"
 authors = [
     { name = "Michael Mangano", email = "mangano.mj@gmail.com" }
