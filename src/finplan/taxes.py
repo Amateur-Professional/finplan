@@ -10,7 +10,9 @@ When unsure about a tax rule, flag it — do not guess.
 
 from __future__ import annotations
 
-from finplan._ss_thresholds import get_ss_tiers
+from dataclasses import dataclass
+
+from finplan._ss_thresholds import SSTaxTier, get_ss_tiers
 from finplan._tax_tables import (
     get_ltcg_brackets,
     get_ordinary_brackets,
@@ -90,12 +92,17 @@ def compute_ss_taxable_amount(
     *other_income* is AGI excluding SS: all tax-deferred withdrawals plus any
     realized capital gains.  Roth withdrawals are tax-free and excluded.
     """
+    return _ss_taxable_from_tiers(ss_benefit, other_income, get_ss_tiers(filing_status))
+
+
+def _ss_taxable_from_tiers(
+    ss_benefit: float, other_income: float, tiers: list[SSTaxTier]
+) -> float:
+    """Taxable SS amount given pre-fetched tiers (hot-path core)."""
     if ss_benefit <= 0:
         return 0.0
 
-    tiers = get_ss_tiers(filing_status)
     provisional = other_income + 0.5 * ss_benefit
-
     lower = tiers[0].combined_income_threshold
     upper = tiers[1].combined_income_threshold  # always present for current law
 
@@ -158,6 +165,95 @@ def compute_ltcg_tax(
     return tax_on_total - tax_on_ordinary
 
 
+@dataclass(frozen=True)
+class YearTaxContext:
+    """Inflation-scaled tax tables for one simulation year.
+
+    Built once per year (the inflation factor is constant within a year) and
+    reused across the gross-up fixed-point iterations, so the brackets and
+    deduction are inflated once rather than on every tax evaluation.
+    """
+
+    filing_status: str
+    ordinary_brackets: _Brackets
+    ltcg_brackets: _Brackets
+    standard_deduction: float
+    ss_tiers: list[SSTaxTier]
+
+
+def build_year_tax_context(
+    filing_status: str, inflation_factor: float = 1.0
+) -> YearTaxContext:
+    """Inflate the 2025 base tables to a given year's price level once."""
+    return YearTaxContext(
+        filing_status=filing_status,
+        ordinary_brackets=_inflate(
+            get_ordinary_brackets(filing_status), inflation_factor
+        ),
+        ltcg_brackets=_inflate(get_ltcg_brackets(filing_status), inflation_factor),
+        standard_deduction=get_standard_deduction(filing_status) * inflation_factor,
+        ss_tiers=get_ss_tiers(filing_status),
+    )
+
+
+@dataclass(frozen=True)
+class YearTaxResult:
+    """Unrounded federal tax components for one year (hot-path core output)."""
+
+    ordinary_income_tax: float
+    capital_gains_tax: float
+    ss_taxable_amount: float
+    taxable_income: float
+
+    @property
+    def total_taxes(self) -> float:
+        return self.ordinary_income_tax + self.capital_gains_tax
+
+
+def compute_year_taxes_ctx(
+    withdrawal_tax_deferred: float,
+    ss_income: float,
+    ltcg_realized: float,
+    ctx: YearTaxContext,
+) -> YearTaxResult:
+    """Core tax computation against pre-inflated tables; returns unrounded floats.
+
+    Same model as :func:`compute_year_taxes` (which is now a rounding wrapper
+    over this); split out so the gross-up loop can call it without re-inflating
+    brackets or building a dict each iteration.
+    """
+    # SS taxability. "Other income" includes LTCG (part of AGI). IRS Pub. 915 Wk 1.
+    other_income = withdrawal_tax_deferred + ltcg_realized
+    ss_taxable = _ss_taxable_from_tiers(ss_income, other_income, ctx.ss_tiers)
+
+    # AGI (no above-the-line deductions in v0), then taxable income after std ded.
+    agi = withdrawal_tax_deferred + ss_taxable + ltcg_realized
+    taxable_income = max(0.0, agi - ctx.standard_deduction)
+
+    # Ordinary income fills the brackets first; LTCG stacks on top.
+    ltcg_taxable = min(ltcg_realized, taxable_income)
+    ordinary_taxable = max(0.0, taxable_income - ltcg_taxable)
+
+    ordinary_tax = (
+        _marginal_tax(ordinary_taxable, ctx.ordinary_brackets)
+        if ordinary_taxable > 0.0
+        else 0.0
+    )
+    if ltcg_taxable > 0.0:
+        tax_on_total = _marginal_tax(ordinary_taxable + ltcg_taxable, ctx.ltcg_brackets)
+        tax_on_ordinary = _marginal_tax(ordinary_taxable, ctx.ltcg_brackets)
+        ltcg_tax = tax_on_total - tax_on_ordinary
+    else:
+        ltcg_tax = 0.0
+
+    return YearTaxResult(
+        ordinary_income_tax=ordinary_tax,
+        capital_gains_tax=ltcg_tax,
+        ss_taxable_amount=ss_taxable,
+        taxable_income=taxable_income,
+    )
+
+
 def compute_year_taxes(
     withdrawal_tax_deferred: float,
     ss_income: float,
@@ -184,37 +280,12 @@ def compute_year_taxes(
         ss_taxable_amount     Portion of ss_income included in gross income.
         taxable_income        AGI minus standard deduction (floor 0).
     """
-    # 1. SS taxability.
-    #    "Other income" for the provisional-income formula includes LTCG because
-    #    realized gains are part of AGI.  Source: IRS Pub. 915, Worksheet 1.
-    other_income = withdrawal_tax_deferred + ltcg_realized
-    ss_taxable = compute_ss_taxable_amount(ss_income, other_income, filing_status)
-
-    # 2. Adjusted Gross Income (no above-the-line deductions modeled in v0).
-    agi = withdrawal_tax_deferred + ss_taxable + ltcg_realized
-
-    # 3. Standard deduction inflated from 2025 base.
-    std_ded = get_standard_deduction(filing_status) * inflation_factor
-
-    # 4. Taxable income after deduction.
-    taxable_income = max(0.0, agi - std_ded)
-
-    # 5. Carve out LTCG from taxable income; ordinary income fills brackets first.
-    ltcg_taxable = min(ltcg_realized, taxable_income)
-    ordinary_taxable = max(0.0, taxable_income - ltcg_taxable)
-
-    # 6. Compute taxes.
-    ordinary_tax = compute_ordinary_income_tax(
-        ordinary_taxable, filing_status, inflation_factor
-    )
-    ltcg_tax = compute_ltcg_tax(
-        ltcg_taxable, ordinary_taxable, filing_status, inflation_factor
-    )
-
+    ctx = build_year_tax_context(filing_status, inflation_factor)
+    r = compute_year_taxes_ctx(withdrawal_tax_deferred, ss_income, ltcg_realized, ctx)
     return {
-        "ordinary_income_tax": round(ordinary_tax, 2),
-        "capital_gains_tax": round(ltcg_tax, 2),
-        "total_taxes": round(ordinary_tax + ltcg_tax, 2),
-        "ss_taxable_amount": round(ss_taxable, 2),
-        "taxable_income": round(taxable_income, 2),
+        "ordinary_income_tax": round(r.ordinary_income_tax, 2),
+        "capital_gains_tax": round(r.capital_gains_tax, 2),
+        "total_taxes": round(r.total_taxes, 2),
+        "ss_taxable_amount": round(r.ss_taxable_amount, 2),
+        "taxable_income": round(r.taxable_income, 2),
     }

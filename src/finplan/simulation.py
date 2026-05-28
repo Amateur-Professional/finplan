@@ -45,8 +45,13 @@ from finplan.models import (
     TrialResult,
     YearDetail,
 )
-from finplan.taxes import compute_rmd, compute_ss_taxable_amount, compute_year_taxes
-from finplan.withdrawal import fixed_real_spending, source_withdrawals
+from finplan.taxes import (
+    build_year_tax_context,
+    compute_rmd,
+    compute_ss_taxable_amount,
+    compute_year_taxes_ctx,
+)
+from finplan.withdrawal import allocate, build_draw_steps, fixed_real_spending
 
 # Map the schema's filing-status enum onto the tax-table keys.
 _FILING_KEY: dict[FilingStatus, str] = {
@@ -272,21 +277,23 @@ def _retirement_year(
         headroom = max(0.0, total_headroom - rmd_withdrawn)
 
     # 5. Gross-up: solve discretionary withdrawals so net cash meets the target.
+    #    The year's inflation factor is constant, so inflate the tax tables once
+    #    and reuse them across every iteration (compute_year_taxes_ctx).
+    tax_ctx = build_year_tax_context(filing_key, inflation_factor)
+    draw_steps = build_draw_steps(plan.sourcing_policy, headroom)
     g = max(0.0, net_target - ss_gross - rmd_withdrawn)
-    plan_result = source_withdrawals(accounts, 0.0, plan.sourcing_policy, headroom)
-    taxes = compute_year_taxes(
-        rmd_withdrawn, ss_gross, 0.0, filing_key, inflation_factor
-    )
-    net = ss_gross + rmd_withdrawn - taxes["total_taxes"]
+    plan_result = allocate(accounts, 0.0, draw_steps)
+    tax = compute_year_taxes_ctx(rmd_withdrawn, ss_gross, 0.0, tax_ctx)
+    net = ss_gross + rmd_withdrawn - tax.total_taxes
 
     for _ in range(_MAX_GROSS_UP_ITERS):
-        plan_result = source_withdrawals(accounts, g, plan.sourcing_policy, headroom)
+        plan_result = allocate(accounts, g, draw_steps)
         td_total = rmd_withdrawn + plan_result.withdrawal_tax_deferred
-        taxes = compute_year_taxes(
-            td_total, ss_gross, plan_result.realized_gain, filing_key, inflation_factor
+        tax = compute_year_taxes_ctx(
+            td_total, ss_gross, plan_result.realized_gain, tax_ctx
         )
         gross_cash = ss_gross + rmd_withdrawn + plan_result.total_withdrawn
-        net = gross_cash - taxes["total_taxes"]
+        net = gross_cash - tax.total_taxes
         gap = net_target - net
         if gap <= _GROSS_UP_TOLERANCE:
             break
@@ -322,9 +329,9 @@ def _retirement_year(
         withdrawal_tax_deferred=td_total,
         withdrawal_tax_free=plan_result.withdrawal_tax_free,
         contribution_taxable=contribution_taxable,
-        ordinary_income_tax=taxes["ordinary_income_tax"],
-        capital_gains_tax=taxes["capital_gains_tax"],
-        total_taxes=taxes["total_taxes"],
+        ordinary_income_tax=round(tax.ordinary_income_tax, 2),
+        capital_gains_tax=round(tax.capital_gains_tax, 2),
+        total_taxes=round(tax.total_taxes, 2),
         balances=balances,
         total_wealth=balances.total,
     )

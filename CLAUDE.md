@@ -41,7 +41,7 @@ which determine the gross withdrawal required to net the target.
 - Deterministic mode must match hand-calculated compound growth exactly.
 - Reproduce the 4% rule: ~30yr horizon, balanced portfolio, success rate
   consistent with Bengen/Trinity research.
-- Monte Carlo success rates must land near cFIREsim/FIRECalc for identical
+- Monte Carlo success rates must land near FIRECalc for identical
   inputs (document the comparison in tests).
 - Tax calcs must match published federal brackets for sample incomes.
 - When unsure about a tax rule, STOP and flag it for me — do not guess.
@@ -53,7 +53,7 @@ which determine the gross withdrawal required to net the target.
 ## Conventions
 - Python 3.11+, full type hints.
 - pydantic models for all inputs and outputs.
-- numpy for the simulation (vectorize trials; avoid Python loops over trials).
+- numpy for the simulation we're currently looping over trials. Add vectorization to roadmap.
 - pytest; write tests alongside each module, not after.
 - Small, pure functions where possible. Financial logic must be readable.
 - Cite the source (IRS pub, paper) in a comment for any non-obvious formula.

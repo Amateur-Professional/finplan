@@ -98,7 +98,17 @@ class WithdrawalPlan:
         return self.withdrawn.get(AccountType.TAX_FREE, 0.0)
 
 
-def _allocate(
+def build_draw_steps(
+    sourcing_policy: SourcingPolicy, tax_deferred_headroom: float = 0.0
+) -> list[_DrawStep]:
+    """Ordered draw plan for a policy. Constant within a year, so the caller can
+    build it once and reuse it across gross-up iterations (see ``allocate``)."""
+    if sourcing_policy == SourcingPolicy.TAX_EFFICIENT:
+        return _tax_efficient_steps(tax_deferred_headroom)
+    return _conventional_steps()
+
+
+def allocate(
     accounts: dict[AccountType, Account],
     gross_amount: float,
     steps: list[_DrawStep],
@@ -148,8 +158,5 @@ def source_withdrawals(
     dollar amount of tax-deferred withdrawal the caller wants taken first (to
     fill a low ordinary-income bracket).  Ignored by the conventional policy.
     """
-    if sourcing_policy == SourcingPolicy.TAX_EFFICIENT:
-        steps = _tax_efficient_steps(tax_deferred_headroom)
-    else:
-        steps = _conventional_steps()
-    return _allocate(accounts, gross_amount, steps)
+    steps = build_draw_steps(sourcing_policy, tax_deferred_headroom)
+    return allocate(accounts, gross_amount, steps)

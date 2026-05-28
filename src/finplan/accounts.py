@@ -27,7 +27,7 @@ track basis: tax-deferred withdrawals are fully ordinary income and tax-free
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from finplan.models import AccountInput, AccountType
 
@@ -76,7 +76,9 @@ def grow(account: Account, return_rate: float) -> Account:
     Growth is unrealised: the balance moves but cost basis does not, so the
     embedded gain (and thus future tax) grows with the account.
     """
-    return replace(account, balance=account.balance * (1.0 + return_rate))
+    return Account(
+        account.account_type, account.balance * (1.0 + return_rate), account.cost_basis
+    )
 
 
 def contribute(account: Account, amount: float) -> Account:
@@ -89,10 +91,8 @@ def contribute(account: Account, amount: float) -> Account:
         return account
     new_balance = account.balance + amount
     if account.account_type == AccountType.TAXABLE:
-        return replace(
-            account, balance=new_balance, cost_basis=account.cost_basis + amount
-        )
-    return replace(account, balance=new_balance)
+        return Account(account.account_type, new_balance, account.cost_basis + amount)
+    return Account(account.account_type, new_balance, account.cost_basis)
 
 
 def withdraw(account: Account, amount: float) -> tuple[Account, WithdrawalResult]:
@@ -112,7 +112,9 @@ def withdraw(account: Account, amount: float) -> tuple[Account, WithdrawalResult
     shortfall = amount - actual
 
     if account.account_type != AccountType.TAXABLE:
-        new_account = replace(account, balance=account.balance - actual)
+        new_account = Account(
+            account.account_type, account.balance - actual, account.cost_basis
+        )
         return new_account, WithdrawalResult(
             amount_withdrawn=actual, realized_gain=0.0, shortfall=shortfall
         )
@@ -120,10 +122,10 @@ def withdraw(account: Account, amount: float) -> tuple[Account, WithdrawalResult
     gain_fraction = (account.balance - account.cost_basis) / account.balance
     realized_gain = actual * gain_fraction
     basis_removed = actual - realized_gain
-    new_account = replace(
-        account,
-        balance=account.balance - actual,
-        cost_basis=account.cost_basis - basis_removed,
+    new_account = Account(
+        account.account_type,
+        account.balance - actual,
+        account.cost_basis - basis_removed,
     )
     return new_account, WithdrawalResult(
         amount_withdrawn=actual, realized_gain=realized_gain, shortfall=shortfall
